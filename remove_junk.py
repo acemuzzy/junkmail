@@ -17,24 +17,39 @@ COLUMNS = [
 
 
 class ExcelHandler:
+    """
+    Class to handle Excel interactions.
+    """
 
     def __init__(self, filename):
+        """
+        Constructor.
+
+        :param filename: Which Excel file to use.
+        """
         self.filename = filename
         self.blacklist = []
         self.blacklist_row = 2
         self.wb = None
 
-    def get_wb(self):
+    def _get_wb(self):
         if not self.wb:
             self.wb = openpyxl.load_workbook(self.filename)
         return self.wb
 
     def exists(self):
+        """
+        Does the Excel file exist?
+        """
         print("Checking existence")
         return os.path.exists(self.filename)
 
     def create_file(self):
+        """
+        Create the Excel file, with sensible column headers.
 
+        Note: should only be called if it doesn't exist already!
+        """
         print "Creating file"
 
         self.wb = openpyxl.Workbook()
@@ -57,9 +72,12 @@ class ExcelHandler:
         exit(0)
 
     def read_blacklist(self):
+        """
+        Read the members of the BLACKLIST_NAME tab.
+        """
         print("Reading blacklist")
 
-        wb = self.get_wb()
+        wb = self._get_wb()
         ws = wb.get_sheet_by_name(BLACKLIST_NAME)
         ws.column_dimensions[get_column_letter(1)].width = 50
 
@@ -77,8 +95,12 @@ class ExcelHandler:
         print("Blacklist is {}".format(self.blacklist))
 
     def update_blacklist(self):
+        """
+        Update the members of the BLACKLIST_NAME tab with any names marked with
+        and 'x' on the main message tab.
+        """
         print("Updating blacklist")
-        wb = self.get_wb()
+        wb = self._get_wb()
         ws = wb.get_sheet_by_name(WORKSHEET_NAME)
         bs_ws = wb.get_sheet_by_name(BLACKLIST_NAME)
         read_row = 2
@@ -101,8 +123,11 @@ class ExcelHandler:
         print("Blacklist is now {}".format(self.blacklist))
 
     def do_work(self, sender_list):
+        """
+        Do actual Excel work, parsing messages etc.
+        """
         print("Outputting data")
-        wb = self.get_wb()
+        wb = self._get_wb()
         ws = wb.get_sheet_by_name(WORKSHEET_NAME)
 
         output_row = 2
@@ -152,24 +177,38 @@ class ExcelHandler:
 
 
 class ImapHandler:
-
+    """
+    Class for handling IMAP interactions.
+    """
     def __init__(self):
-        self.mail = None
+        """
+        Constructor.
+        """
+        self._mail = None
 
     def connect(self, server, username, password):
+        """
+        Create connection to the IMAP server.
+
+        :param server: The server to connect to.
+        :param username: The username to use for the connection.
+        :param password: The password to use for the connection.
+        """
         try:
-            self.mail = imaplib.IMAP4_SSL(server)
-            self.mail.login(username, password)
+            self._mail = imaplib.IMAP4_SSL(server)
+            self._mail.login(username, password)
 
         except imaplib.IMAP4.error as exc:
             print("IMAP error: {}".format(exc))
             exit(0)
 
     def read_inbox(self):
+        """
+        Parase the inbox and do actual message handling.
+        """
+        self._mail.select("inbox")
 
-        self.mail.select("inbox")
-
-        result, data = self.mail.search(None, "ALL")
+        result, data = self._mail.search(None, "ALL")
         ids = data[0]
         id_list = ids.split()
         print("{} emails".format(len(id_list)))
@@ -178,7 +217,7 @@ class ImapHandler:
         sender_list = {}
 
         for uid in ids:
-            result, data = self.mail.fetch(uid, "(RFC822)")
+            result, data = self._mail.fetch(uid, "(RFC822)")
             for response_part in data:
                 if isinstance(response_part, tuple):
                     msg = email.message_from_string(response_part[1])
@@ -200,9 +239,16 @@ class ImapHandler:
 
 
 class ConfigHandler:
+    """
+    Config handler class.  Deals with parsing YAML to get IMAP / Excel details.
+    """
 
     def __init__(self, filename="junk.cfg"):
+        """
+        Constructor.
 
+        :param filename: filename to read
+        """
         print("Loading configuration")
 
         with open(filename, 'r') as stream:
@@ -226,13 +272,12 @@ class ConfigHandler:
 
         print("Config loaded")
 
+# Main function
 if __name__ == "__main__":
-
     config = ConfigHandler()
 
     imap_handler = ImapHandler()
     imap_handler.connect(config.server, config.username, config.password)
-    senders = imap_handler.read_inbox()
 
     writer = ExcelHandler(config.filename)
 
@@ -242,4 +287,5 @@ if __name__ == "__main__":
         writer.read_blacklist()
         writer.update_blacklist()
 
+    senders = imap_handler.read_inbox()
     writer.do_work(senders)
