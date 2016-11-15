@@ -7,6 +7,9 @@ This python script helps you control your junk mail via code and/or Excel!
 
 # Usage
 
-Just run junk_mail.py.
+ - Copy `example.imap.cfg` to `imap.cfg` and fill in the relevant details.
+ - Run junk_mail.py.
+ - Populate the email blacklist, or mark 'x' in Column A of the spreadsheet.
+ - Re-run to delete black-listed items.
 
-Configuration is currently in the Python file, but will be moved out soon.
+
