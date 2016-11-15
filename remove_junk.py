@@ -6,6 +6,7 @@ import re
 import openpyxl
 from openpyxl.cell import get_column_letter
 import os
+import yaml
 
 WORKSHEET_NAME = "CURRENT_CONTENT"
 BLACKLIST_NAME = "BLACK_LIST"
@@ -148,13 +149,37 @@ class ExcelHandler:
 
         wb.save(self.filename)
 
-mail = imaplib.IMAP4_SSL('imap.a.com')
-mail.login('a@a.com', 'aaa')
-mail.list()
-# Out: list of "folders" aka labels in gmail.
-mail.select("inbox") # connect to inbox.
+print("Loading configuration")
 
-result, data = mail.search(None, "ALL")
+with open("imap.cfg", 'r') as stream:
+    try:
+        doc = yaml.load(stream)
+        imap_details = doc["imap_server"]
+
+        server = imap_details["server"]
+        username = imap_details["username"]
+        password = imap_details["password"]
+
+    except yaml.YAMLError as exc:
+        print("YAML error: {}".format(exc))
+        exit(0)
+    except KeyError as exc:
+        print("Missing key: {}".format(exc))
+        exit(0)
+
+print("Config loaded")
+
+try:
+    mail = imaplib.IMAP4_SSL(server)
+    mail.login(username, password)
+
+    # Out: list of "folders" aka labels in gmail.
+    mail.select("inbox") # connect to inbox.
+
+    result, data = mail.search(None, "ALL")
+except imaplib.IMAP4.error as exc:
+    print("IMAP error: {}".format(exc))
+    exit(0)
 
 ids = data[0] # data is a list.
 id_list = ids.split() # ids is a space separated string
