@@ -15,6 +15,7 @@ COLUMNS = [
     "SENDER", "ID"
 ]
 
+
 class ExcelHandler:
 
     def __init__(self, filename):
@@ -99,13 +100,13 @@ class ExcelHandler:
 
         print("Blacklist is now {}".format(self.blacklist))
 
-    def doWork(self, senders):
+    def do_work(self, sender_list):
         print("Outputting data")
         wb = self.get_wb()
         ws = wb.get_sheet_by_name(WORKSHEET_NAME)
 
         output_row = 2
-        for sender in senders:
+        for sender in sender_list:
             ws.cell(row=output_row, column=2).value = sender
 
             if sender in self.blacklist:
@@ -116,10 +117,10 @@ class ExcelHandler:
                 print("leave {}".format(sender))
 
             output_col = 3
-            for id in senders[sender]["ids"]:
+            for uid in sender_list[sender]["ids"]:
                 if sender in self.blacklist:
-                    print("delete id {}".format(id))
-                ws.cell(row=output_row, column=output_col).value = id
+                    print("delete id {}".format(uid))
+                ws.cell(row=output_row, column=output_col).value = uid
                 ws.column_dimensions[get_column_letter(output_col)].width = 6
                 output_col += 1
 
@@ -149,72 +150,96 @@ class ExcelHandler:
 
         wb.save(self.filename)
 
-print("Loading configuration")
 
-with open("imap.cfg", 'r') as stream:
-    try:
-        doc = yaml.load(stream)
-        imap_details = doc["imap_server"]
+class ImapHandler:
 
-        server = imap_details["server"]
-        username = imap_details["username"]
-        password = imap_details["password"]
+    def __init__(self):
+        self.mail = None
 
-    except yaml.YAMLError as exc:
-        print("YAML error: {}".format(exc))
-        exit(0)
-    except KeyError as exc:
-        print("Missing key: {}".format(exc))
-        exit(0)
+    def connect(self, server, username, password):
+        try:
+            self.mail = imaplib.IMAP4_SSL(server)
+            self.mail.login(username, password)
 
-print("Config loaded")
+        except imaplib.IMAP4.error as exc:
+            print("IMAP error: {}".format(exc))
+            exit(0)
 
-try:
-    mail = imaplib.IMAP4_SSL(server)
-    mail.login(username, password)
+    def read_inbox(self):
 
-    # Out: list of "folders" aka labels in gmail.
-    mail.select("inbox") # connect to inbox.
+        self.mail.select("inbox")
 
-    result, data = mail.search(None, "ALL")
-except imaplib.IMAP4.error as exc:
-    print("IMAP error: {}".format(exc))
-    exit(0)
+        result, data = self.mail.search(None, "ALL")
+        ids = data[0]
+        id_list = ids.split()
+        print("{} emails".format(len(id_list)))
+        ids = id_list[-50:]
 
-ids = data[0] # data is a list.
-id_list = ids.split() # ids is a space separated string
-print("{} emails".format(len(id_list)))
-ids = id_list[-50:] # get the latest
+        sender_list = {}
 
-senders = {}
+        for uid in ids:
+            result, data = self.mail.fetch(uid, "(RFC822)")
+            for response_part in data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_string(response_part[1])
+                    sender = msg['from'].split()[-1]
+                    address = re.sub(r'[<>]', '', sender)
 
-for id in ids:
-    result, data = mail.fetch(id, "(RFC822)") # fetch the email body (RFC822) for the given ID
-    for response_part in data:
-        if isinstance(response_part, tuple):
-            msg = email.message_from_string(response_part[1])
-            sender = msg['from'].split()[-1]
-            address = re.sub(r'[<>]','',sender)
+                    print("{},{}".format(uid, address))
 
-            print("{},{}".format(id, address))
+                    if address in sender_list:
+                        sender_list[address]["ids"].append(uid)
+                    else:
+                        sender_list[address] = {}
+                        sender_list[address]["ids"] = [uid]
 
-            if address in senders:
-                senders[address]["ids"].append(id)
-            else:
-                senders[address] = {}
-                senders[address]["ids"] = [id]
+        for sender in sender_list:
+            print("{}: {}".format(sender, sender_list[sender]["ids"]))
 
-for sender in senders:
-    print("{}: {}".format(sender, senders[sender]["ids"]))
+        return sender_list
 
-write_mode = True
 
-if write_mode:
-    writer = ExcelHandler("test.xlsx")
+class ConfigHandler:
+
+    def __init__(self, filename="junk.cfg"):
+
+        print("Loading configuration")
+
+        with open(filename, 'r') as stream:
+            try:
+                doc = yaml.load(stream)
+
+                imap_details = doc["imap_server"]
+                self.server = imap_details["server"]
+                self.username = imap_details["username"]
+                self.password = imap_details["password"]
+
+                excel_details = doc["excel"]
+                self.filename = excel_details["filename"]
+
+            except yaml.YAMLError as exc:
+                print("YAML error: {}".format(exc))
+                exit(0)
+            except KeyError as exc:
+                print("Missing key: {}".format(exc))
+                exit(0)
+
+        print("Config loaded")
+
+if __name__ == "__main__":
+
+    config = ConfigHandler()
+
+    imap_handler = ImapHandler()
+    imap_handler.connect(config.server, config.username, config.password)
+    senders = imap_handler.read_inbox()
+
+    writer = ExcelHandler(config.filename)
+
     if not writer.exists():
         writer.create_file()
     else:
         writer.read_blacklist()
         writer.update_blacklist()
 
-    writer.doWork(senders)
+    writer.do_work(senders)
